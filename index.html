@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HP Data Manager</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #007bff;
+            color: white;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .icon {
+            margin-right: 5px;
+        }
+        .popup {
+            display: none;
+            position: fixed;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        .popup-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            width: 400px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        .close {
+            cursor: pointer;
+            float: right;
+            font-size: 20px;
+            color: #aaa;
+        }
+        .close:hover {
+            color: #000;
+        }
+        input[type="text"], input[type="number"] {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .import-export {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        @media (max-width: 600px) {
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>HP Data Manager</h1>
+    <input type="text" id="search" placeholder="Cari Tipe HP..." onkeyup="searchData()">
+    <div class="import-export">
+        <button onclick="document.getElementById('popup').style.display='flex'"><i class="fas fa-plus icon"></i> Tambah Data</button>
+        <button onclick="exportData()"><i class="fas fa-file-export icon"></i> Export CSV</button>
+        <input type="file" id="importFile" accept=".csv" onchange="importData(event)" style="display: none;">
+        <button onclick="document.getElementById('importFile').click()"><i class="fas fa-file-import icon"></i> Import CSV</button>
+    </div>
+    <table id="data-table">
+        <thead>
+            <tr>
+                <th>Tipe HP</th>
+                <th>SRP</th>
+                <th>Modal</th>
+                <th>Selisih</th>
+                <th>Potongan Harga</th>
+                <th>Aksi</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Data akan ditambahkan di sini -->
+        </tbody>
+    </table>
+</div>
+
+<div id="popup" class="popup" style="display:none;">
+    <div class="popup-content">
+        <span class="close" onclick="document.getElementById('popup').style.display='none'">&times;</span>
+        <h2>Tambah Data HP</h2>
+        <label for="tipe">Tipe HP:</label>
+        <input type="text" id="tipe" placeholder="Masukkan Tipe HP" required>
+        <label for="srp">SRP:</label>
+        <input type="text" id="srp" placeholder="Masukkan SRP" required oninput="formatRupiah(this)">
+        <label for="modal">Modal:</label>
+        <input type="text" id="modal" placeholder="Masukkan Modal" required oninput="formatRupiah(this)">
+        <label for="potongan">Potongan Harga:</label>
+        <input type="text" id="potongan" placeholder="Masukkan Potongan Harga" required oninput="formatRupiah(this)">
+        <button onclick="addData()">Simpan</button>
+    </div>
+</div>
+
+<script>
+    let db;
+    const request = indexedDB.open("hpDatabase", 1);
+
+    request.onupgradeneeded = function(event) {
+        db = event.target.result;
+        const objectStore = db.createObjectStore("hpData", { keyPath: "id", autoIncrement: true });
+        objectStore.createIndex("tipe", "tipe", { unique: false });
+    };
+
+    request.onsuccess = function(event) {
+        db = event.target.result;
+        displayData();
+    };
+
+    function addData() {
+        const tipe = document.getElementById("tipe").value;
+        const srp = parseInt(document.getElementById("srp").value.replace(/\./g, ''));
+        const modal = parseInt(document.getElementById("modal").value.replace(/\./g, ''));
+        const potongan = parseInt(document.getElementById("potongan").value.replace(/\./g, ''));
+        
+        const transaction = db.transaction(["hpData"], "readwrite");
+        const objectStore = transaction.objectStore("hpData");
+        const data = { tipe, srp, modal, potongan, selisih: srp - modal };
+        
+        objectStore.add(data);
+        transaction.oncomplete = function() {
+            displayData();
+            document.getElementById('popup').style.display = 'none';
+            clearInputs();
+        };
+    }
+
+    function displayData() {
+        const transaction = db.transaction(["hpData"], "readonly");
+        const objectStore = transaction.objectStore("hpData");
+        const request = objectStore.getAll();
+
+        request.onsuccess = function(event) {
+            const data = event.target.result;
+            const tbody = document.querySelector("#data-table tbody");
+            tbody.innerHTML = "";
+            data.forEach(item => {
+                const row = `<tr>
+                    <td>${item.tipe}</td>
+                    <td>${formatCurrency(item.srp)}</td>
+                    <td>${formatCurrency(item.modal)}</td>
+                    <td>${formatCurrency(item.selisih)}</td>
+                    <td>${formatCurrency(item.potongan)}</td>
+                    <td>
+                        <button onclick="editData(${item.id})"><i class="fas fa-edit icon"></i>Edit</button>
+                        <button onclick="deleteData(${item.id})"><i class="fas fa-trash icon"></i>Hapus</button>
+                    </td>
+                </tr>`;
+                tbody.innerHTML += row;
+            });
+        };
+    }
+
+    function clearInputs() {
+        document.getElementById("tipe").value = "";
+        document.getElementById("srp").value = "";
+        document.getElementById("modal").value = "";
+        document.getElementById("potongan").value = "";
+    }
+
+    function deleteData(id) {
+        const transaction = db.transaction(["hpData"], "readwrite");
+        const objectStore = transaction.objectStore("hpData");
+        objectStore.delete(id);
+        transaction.oncomplete = function() {
+            displayData();
+        };
+    }
+
+    function editData(id) {
+        const transaction = db.transaction(["hpData"], "readonly");
+        const objectStore = transaction.objectStore("hpData");
+        const request = objectStore.get(id);
+
+        request.onsuccess = function(event) {
+            const item = event.target.result;
+            document.getElementById("tipe").value = item.tipe;
+            document.getElementById("srp").value = formatCurrency(item.srp);
+            document.getElementById("modal").value = formatCurrency(item.modal);
+            document.getElementById("potongan").value = formatCurrency(item.potongan);
+            document.getElementById('popup').style.display = 'flex';
+            document.getElementById("popup").setAttribute("data-edit-id", id);
+        };
+    }
+
+    function formatRupiah(input) {
+        let value = input.value.replace(/\./g, '');
+        if (value) {
+            input.value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        }
+    }
+
+    function formatCurrency(value) {
+        return value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    }
+
+    function searchData() {
+        const searchValue = document.getElementById("search").value.toLowerCase();
+        const rows = document.querySelectorAll("#data-table tbody tr");
+        rows.forEach(row => {
+            const cell = row.cells[0].textContent.toLowerCase();
+            row.style.display = cell.includes(searchValue) ? "" : "none";
+        });
+    }
+
+    function exportData() {
+        const transaction = db.transaction(["hpData"], "readonly");
+        const objectStore = transaction.objectStore("hpData");
+        const request = objectStore.getAll();
+
+        request.onsuccess = function(event) {
+            const data = event.target.result;
+            let csvContent = "data:text/csv;charset=utf-8,Tipe HP,SRP,Modal,Selisih,Potongan Harga\n";
+            data.forEach(item => {
+                const row = `${item.tipe},${formatCurrency(item.srp)},${formatCurrency(item.modal)},${formatCurrency(item.selisih)},${formatCurrency(item.potongan)}`;
+                csvContent += row + "\n";
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "hp_data.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }
+
+    function importData(event) {
+        const file = event.target.files[0];
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const content = e.target.result;
+            const rows = content.split("\n").slice(1);
+            rows.forEach(row => {
+                const columns = row.split(",");
+                if (columns.length === 5) {
+                    const data = {
+                        tipe: columns[0],
+                        srp: parseInt(columns[1].replace(/\./g, '')),
+                        modal: parseInt(columns[2].replace(/\./g, '')),
+                        selisih: parseInt(columns[1].replace(/\./g, '')) - parseInt(columns[2].replace(/\./g, '')),
+                        potongan: parseInt(columns[4].replace(/\./g, ''))
+                    };
+                    const transaction = db.transaction(["hpData"], "readwrite");
+                    const objectStore = transaction.objectStore("hpData");
+                    objectStore.add(data);
+                }
+            });
+            displayData();
+        };
+        reader.readAsText(file);
+    }
+</script>
+
+</body>
+</html>
